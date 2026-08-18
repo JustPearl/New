@@ -1,7 +1,65 @@
-import { Canvas } from '@react-three/fiber'
-import { Sky, Environment, OrbitControls, PerspectiveCamera } from '@react-three/drei'
-import { Suspense, useState, useRef, useEffect } from 'react'
+import { Canvas, useFrame } from '@react-three/fiber'
+import { Sky, Environment, OrbitControls, PerspectiveCamera, Cloud } from '@react-three/drei'
+import { Suspense, useState, useRef, useEffect, useMemo } from 'react'
 import * as THREE from 'three'
+
+// Rain particle system
+function Rain() {
+  const rainRef = useRef<THREE.Points>(null)
+  const rainCount = 15000
+  
+  const rainGeometry = useMemo(() => {
+    const geometry = new THREE.BufferGeometry()
+    const positions = new Float32Array(rainCount * 3)
+    const velocities = new Float32Array(rainCount)
+    
+    for (let i = 0; i < rainCount; i++) {
+      positions[i * 3] = (Math.random() - 0.5) * 100 // x
+      positions[i * 3 + 1] = Math.random() * 50 // y
+      positions[i * 3 + 2] = (Math.random() - 0.5) * 100 // z
+      velocities[i] = 0.5 + Math.random() * 0.5 // speed
+    }
+    
+    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+    geometry.setAttribute('velocity', new THREE.BufferAttribute(velocities, 1))
+    return geometry
+  }, [])
+  
+  const rainMaterial = useMemo(() => {
+    return new THREE.PointsMaterial({
+      color: '#aaaaaa',
+      size: 0.1,
+      transparent: true,
+      opacity: 0.6,
+      blending: THREE.AdditiveBlending
+    })
+  }, [])
+  
+  useFrame((state, delta) => {
+    if (!rainRef.current) return
+    
+    const positions = rainRef.current.geometry.attributes.position.array as Float32Array
+    const velocities = rainRef.current.geometry.attributes.velocity.array as Float32Array
+    
+    for (let i = 0; i < rainCount; i++) {
+      positions[i * 3 + 1] -= velocities[i] * delta * 50 // Fall down
+      
+      // Reset raindrop when it hits the ground
+      if (positions[i * 3 + 1] < 0) {
+        positions[i * 3 + 1] = 50
+        positions[i * 3] = (Math.random() - 0.5) * 100
+        positions[i * 3 + 2] = (Math.random() - 0.5) * 100
+      }
+      
+      // Add some wind effect
+      positions[i * 3] += Math.sin(state.clock.elapsedTime + i) * 0.01
+    }
+    
+    rainRef.current.geometry.attributes.position.needsUpdate = true
+  })
+  
+  return <points ref={rainRef} geometry={rainGeometry} material={rainMaterial} />
+}
 
 // Tropical palm tree component
 interface PalmTreeProps {
@@ -9,9 +67,32 @@ interface PalmTreeProps {
   scale?: number
 }
 
-function PalmTree({ position, scale = 1 }: PalmTreeProps) {
+// Wind animation for palm trees
+function WindyPalmTree({ position, scale = 1 }: PalmTreeProps) {
+  const groupRef = useRef<THREE.Group>(null)
+  const leavesRefs = useRef<(THREE.Mesh | null)[]>([])
+  
+  useFrame((state) => {
+    if (!groupRef.current) return
+    
+    // Gentle swaying motion
+    const time = state.clock.elapsedTime
+    const windStrength = 0.05
+    
+    groupRef.current.rotation.z = Math.sin(time * 2) * windStrength
+    groupRef.current.rotation.x = Math.cos(time * 1.5) * windStrength * 0.5
+    
+    // Animate leaves
+    leavesRefs.current.forEach((leaf, i) => {
+      if (leaf) {
+        leaf.rotation.z = Math.sin(time * 3 + i) * 0.1
+        leaf.rotation.x = Math.cos(time * 2.5 + i * 0.5) * 0.05
+      }
+    })
+  })
+  
   return (
-    <group position={position} scale={[scale, scale, scale]}>
+    <group ref={groupRef} position={position} scale={[scale, scale, scale]}>
       {/* Trunk */}
       <mesh position={[0, 2.5, 0]}>
         <cylinderGeometry args={[0.15, 0.2, 5, 8]} />
@@ -21,6 +102,7 @@ function PalmTree({ position, scale = 1 }: PalmTreeProps) {
       {[...Array(8)].map((_, i) => (
         <mesh
           key={i}
+          ref={(el) => (leavesRefs.current[i] = el)}
           position={[Math.sin(i * Math.PI / 4) * 0.3, 5, Math.cos(i * Math.PI / 4) * 0.3]}
           rotation={[0.5, i * Math.PI / 4, 0]}
         >
@@ -141,9 +223,10 @@ function ScopeOverlay({ crosshairVisible }: { crosshairVisible: boolean }) {
 interface SniperSceneProps {
   scoped: boolean
   hitTargets: boolean[]
+  weather: 'sunny' | 'rainy' | 'cloudy'
 }
 
-function SniperScene({ scoped, hitTargets }: SniperSceneProps) {
+function SniperScene({ scoped, hitTargets, weather }: SniperSceneProps) {
   const cameraRef = useRef<THREE.PerspectiveCamera>(null)
   const [cameraPos, setCameraPos] = useState<[number, number, number]>([0, 1.6, 8])
   
@@ -173,36 +256,56 @@ function SniperScene({ scoped, hitTargets }: SniperSceneProps) {
         maxDistance={15}
       />
 
-      {/* Sky and Environment */}
+      {/* Sky and Environment - adjust based on weather */}
       <Sky 
         sunPosition={[100, 50, 100]}
-        turbidity={8}
-        rayleigh={6}
-        mieCoefficient={0.005}
+        turbidity={weather === 'rainy' ? 15 : 8}
+        rayleigh={weather === 'rainy' ? 3 : 6}
+        mieCoefficient={weather === 'rainy' ? 0.01 : 0.005}
         mieDirectionalG={0.7}
       />
-      <Environment preset="sunset" />
+      <Environment preset={weather === 'rainy' ? 'night' : 'sunset'} />
 
-      {/* Lighting */}
-      <ambientLight intensity={0.5} />
+      {/* Lighting - adjust for weather */}
+      <ambientLight intensity={weather === 'rainy' ? 0.3 : 0.5} />
       <directionalLight 
         position={[50, 50, 50]} 
-        intensity={1.5}
+        intensity={weather === 'rainy' ? 0.8 : 1.5}
         castShadow
         shadow-mapSize-width={2048}
         shadow-mapSize-height={2048}
       />
 
+      {/* Weather effects */}
+      {weather === 'rainy' && <Rain />}
+      
+      {/* Clouds for cloudy/rainy weather */}
+      {(weather === 'cloudy' || weather === 'rainy') && (
+        <>
+          <Cloud position={[-20, 15, -20]} speed={0.2} opacity={0.7} />
+          <Cloud position={[0, 12, -30]} speed={0.3} opacity={0.8} />
+          <Cloud position={[20, 18, -25]} speed={0.25} opacity={0.7} />
+          <Cloud position={[-10, 10, -40]} speed={0.15} opacity={0.9} />
+          <Cloud position={[15, 14, -35]} speed={0.2} opacity={0.85} />
+        </>
+      )}
+
       {/* Ground - sandy beach */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]} receiveShadow>
         <planeGeometry args={[100, 100]} />
-        <meshStandardMaterial color="#F4D03F" roughness={0.9} />
+        <meshStandardMaterial 
+          color={weather === 'rainy' ? '#C9B037' : '#F4D03F'} 
+          roughness={weather === 'rainy' ? 0.95 : 0.9} 
+        />
       </mesh>
 
       {/* Ocean in background */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.1, -30]}>
         <planeGeometry args={[200, 100]} />
-        <meshStandardMaterial color="#0077BE" roughness={0.3} />
+        <meshStandardMaterial 
+          color={weather === 'rainy' ? '#005580' : '#0077BE'} 
+          roughness={0.3} 
+        />
       </mesh>
 
       {/* Mountains in distance */}
@@ -217,13 +320,13 @@ function SniperScene({ scoped, hitTargets }: SniperSceneProps) {
         </mesh>
       ))}
 
-      {/* Palm trees around the range */}
-      <PalmTree position={[-8, 0, -5]} scale={1.2} />
-      <PalmTree position={[8, 0, -5]} scale={1.1} />
-      <PalmTree position={[-10, 0, 5]} scale={0.9} />
-      <PalmTree position={[10, 0, 5]} scale={1.0} />
-      <PalmTree position={[-6, 0, -15]} scale={1.3} />
-      <PalmTree position={[6, 0, -15]} scale={1.1} />
+      {/* Palm trees around the range - use windy version for weather effects */}
+      <WindyPalmTree position={[-8, 0, -5]} scale={1.2} />
+      <WindyPalmTree position={[8, 0, -5]} scale={1.1} />
+      <WindyPalmTree position={[-10, 0, 5]} scale={0.9} />
+      <WindyPalmTree position={[10, 0, 5]} scale={1.0} />
+      <WindyPalmTree position={[-6, 0, -15]} scale={1.3} />
+      <WindyPalmTree position={[6, 0, -15]} scale={1.1} />
 
       {/* Shooting range barriers */}
       <mesh position={[-5, 0.75, -10]} castShadow>
@@ -278,6 +381,7 @@ function App() {
   const [scoped, setScoped] = useState(false)
   const [hitTargets, setHitTargets] = useState([false, false, false])
   const [score, setScore] = useState(0)
+  const [weather, setWeather] = useState<'sunny' | 'rainy' | 'cloudy'>('sunny')
 
   const handleScopeToggle = () => {
     setScoped(!scoped)
@@ -295,6 +399,14 @@ function App() {
     }
   }
 
+  const cycleWeather = () => {
+    setWeather(prev => {
+      if (prev === 'sunny') return 'cloudy'
+      if (prev === 'cloudy') return 'rainy'
+      return 'sunny'
+    })
+  }
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.code === 'Space') {
@@ -302,6 +414,9 @@ function App() {
       }
       if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') {
         handleScopeToggle()
+      }
+      if (e.code === 'KeyW') {
+        cycleWeather()
       }
     }
 
@@ -327,6 +442,10 @@ function App() {
           <p>🎯 Hit targets to score points!</p>
           <p>🔍 Hold SHIFT or click to scope in/out</p>
           <p>💥 Press SPACE or click to shoot</p>
+          <p>☀️ Press W to change weather (Sunny → Cloudy → Rainy)</p>
+          <p style={{ marginTop: '8px', fontWeight: 'bold' }}>
+            Current Weather: {weather === 'sunny' ? '☀️ Sunny' : weather === 'cloudy' ? '☁️ Cloudy' : '🌧️ Rainy'}
+          </p>
         </div>
       </div>
 
@@ -385,6 +504,7 @@ function App() {
           <SniperScene 
             scoped={scoped} 
             hitTargets={hitTargets}
+            weather={weather}
           />
         </Suspense>
       </Canvas>
