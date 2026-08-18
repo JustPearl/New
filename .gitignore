@@ -5,15 +5,9 @@ node_modules/
 # Build outputs
 dist/
 build/
-coverage/
-htmlcov/
+target/
 
-# Environment variables
-.env
-.env.local
-.env.*
-
-# Python specific
+# Python
 __pycache__/
 *.pyc
 *.pyo
@@ -23,35 +17,32 @@ env/
 venv/
 .venv/
 .ENV
-.python-version
-pip-log.txt
-pip-delete-this-directory.txt
 .pytest_cache/
 .mypy_cache/
+.coverage
+coverage/
 
 # Logs
 *.log
 
-# OS generated files
-.DS_Store
-.DS_Store?
-._*
-.Spotlight-V100
-.Trashes
-ehthumbs.db
-Thumbs.db
-Icon?
-.directory
-.fuse_hidden*
+# Environment variables
+.env
+.env.local
+.env.*
 
-# Editor files
+# IDE files
 .vscode/
 .idea/
 *.swp
 *.swo
 *.tmp
 
+# OS generated files
+.DS_Store
+Thumbs.db
+
 # Compiled files
+*.class
 *.o
 *.obj
 *.exe
@@ -60,7 +51,7 @@ Icon?
 *.a
 *.out
 
-# Compressed files
+# Archives
 *.zip
 *.gz
 *.tar
@@ -83,14 +74,4 @@ Icon?
 *.tar.bz2
 *.tar.xz
 *.tar.zst
-
-# Testing
-.coverage
-
-# Gradle
-.gradle/
-build/
-
-# Target directories
-target/
 ```
